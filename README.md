@@ -1,3 +1,4 @@
+![alt text](https://github.com/digrigor/LitGene/blob/master/Litgene_logo.tif)
 # LitGene
 LitGene is an under-development python script for automated gene annotation and search of the PubMed database for articles relating a 
 set of genes to a given term.
