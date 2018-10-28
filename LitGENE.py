@@ -5,14 +5,17 @@ import unicodedata
 import time
 import concurrent
 import concurrent.futures
-import urllib.request
-
 
 pmc_basename_name = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pmc&term="
 pubmed_basename_name = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=pubmed&term="
 pubmed_basename_uid = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/elink.fcgi?dbfrom=pubmed&linkname=gene_pubmed&id="
 gene_basename_uid = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=gene&id="
 gene_basename_name = "https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?db=gene&term="
+
+# Retrieve a single page and report the url and contents
+def load_url(url, timeout):
+    response=requests.get(url)
+    return response.content
 
 def read_from_csv(path):
     try:
@@ -27,21 +30,16 @@ def read_from_csv(path):
 
 
 def ncbi_gene_search_by_name(genes, organism, uid=False, annot=True):
+
     organism = "%20".join(organism.split(" "))
-    uids= []
+
     urlz= []
-    nams= []
-    cnams= []
-    nnams= []
-    gene_symbols=[]
-    descriptions=[]
-    summaries=[]
-    uids2=[]
-    uid_dict = {}
-    nn_dict = {}
+    url_dic={}
 
     for g in genes:
-        urlz.append(gene_basename_name+'('+g+'%5BGene%20Name%5D)%20AND%20'+organism+"%5BOrganism%5D")
+        url = gene_basename_name+'('+g+'%5BGene%20Name%5D)%20AND%20'+organism+"%5BOrganism%5D"
+        urlz.append(url)
+        url_dic[url] = [g]
 
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=60) as executor:
@@ -50,33 +48,28 @@ def ncbi_gene_search_by_name(genes, organism, uid=False, annot=True):
         for future in concurrent.futures.as_completed(future_to_url):
             url = future_to_url[future]
             data = future.result()
-            fre = re.findall("\(.+%5BGene%20", url)[0]
-            nam = re.findall("\(.+%5BGene%20", url)[0][1:-10]
             try: cor_nam = re.findall("<Term>\S+Gene Name]</Term>", str(data))[0][6:-18]
             except IndexError: cor_nam = "-"
             try:
                 fre = re.findall('<Id>\d+</Id>', str(data))[0]
-                id = re.findall('\d+', fre)[0]
-            except IndexError: id = "-"
-            uids.append(id)
-            nams.append(nam)
-            cnams.append(cor_nam)
-    for i in range(0, len(nams)):
-        a=uids[i]
-        if cnams[i]!='-':
-            b=cnams[i]
-        else: b=nams[i]
-        uid_dict[a]=[]
-        uid_dict[a].append(nams[i])
-        uid_dict[a].append(cnams[i])
-        uid_dict[a].append(b)
-        nn_dict[b]=[]
-        nn_dict[b].append(nams[i])
-        nn_dict[b].append(cnams[i])
-        nn_dict[b].append(a)
+                idz = re.findall('\d+', fre)[0]
+            except IndexError: idz = "-"
+            url_dic[url].extend([cor_nam, idz])
 
+        return(url_dic)
+
+def search_gene_annot(ins_dic, uidz=False):
+    if uidz == True:
+        uids = ins_dic.values()
+    else:
+        uids = [x[2] for x in ins_dic.values() if x[2] != '-']
+    uids = list(set(uids))
     urlz = []
+    uids2 = []
+    ext_dic = dict(zip([x[2] for x in ins_dic.values()], ins_dic.values()))
+
     for i in uids:
+        url=gene_basename_uid+str(i)
         urlz.append(gene_basename_uid+str(i))
 
 
@@ -86,23 +79,25 @@ def ncbi_gene_search_by_name(genes, organism, uid=False, annot=True):
         for future in concurrent.futures.as_completed(future_to_url):
             url = future_to_url[future]
             data = future.result()
-            try: gene_symbols.append(re.findall('<Name>\S+</Name>', str(data))[0][6:-7])
-            except IndexError: gene_symbols.append("-")
-            try: descriptions.append(re.findall('<Description>.+</Description>', str(data))[0][13:-14])
-            except IndexError: descriptions.append("-")
-            try: summaries.append(re.findall('<Summary>.+</Summary>', str(data))[0][9:-10])
-            except IndexError: summaries.append("-")
-            try: uids2.append(re.findall("\d+$", url)[0])
-            except IndexError: uids2.append("-")
-    for i in range(0, len(uids2)):
-        a=uids2[i]
-        if a!='-':
-            uid_dict[a]=[]
-            uid_dict[a].append(descriptions[i])
-            uid_dict[a].append(summaries[i])
-            uid_dict[a].append(b)
+            try: gene_symbols = re.findall('<Name>\S+</Name>', str(data))[0][6:-7]
+            except IndexError: gene_symbols = "-"
+            try: descriptions = re.findall('<Description>.+</Description>', str(data))[0][13:-14]
+            except IndexError: descriptions = "-"
+            try: summaries = re.findall('<Summary>.+</Summary>', str(data))[0][9:-10]
+            except IndexError: summaries = "-"
+            uids2 = re.findall("\d+$", url)[0]
+            try: ext_dic[uids2].extend([gene_symbols, descriptions, summaries])
+            except KeyError: ext_dic[uids2] = [gene_symbols, descriptions, summaries]
 
-    return gene_symbols, uids2, descriptions, summaries
+
+    return ext_dic
+
+def add_name_pb_url_in_dic(url_dic, uid=False):
+    if
+            for x in url_dic:
+
+
+
 
 def ncbi_pubmed_name_comention(genes, coterm):
     coterm = "+".join(coterm.split(" "))
@@ -192,10 +187,7 @@ for rect in bar:
     plt.text(rect.get_y() + rect.get_width()/2.0, height, '%d' % int(height), ha='center', va='bottom')
     i+=1
 
-# Retrieve a single page and report the url and contents
-def load_url(url, timeout):
-    response=requests.get(url)
-    return response.content
+
 
 # We can use a with statement to ensure threads are cleaned up promptly
 nam_id = {}
