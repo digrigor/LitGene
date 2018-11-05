@@ -24,7 +24,9 @@ def read_from_csv(path):
         gs_pd = pd.read_csv(path, encoding="latin1", header=None)
 
     gs = list(gs_pd[0])
-    gs_dec = [unicodedata.normalize("NFKD", x).rstrip() for x in gs]
+
+    try: gs_dec = [unicodedata.normalize("NFKD", x).rstrip() for x in gs]
+    except TypeError: gs_dec = gs
 
     return gs_dec
 
@@ -56,22 +58,21 @@ def ncbi_gene_search_by_name(genes, organism, uid=False, annot=True):
             except IndexError: idz = "-"
             url_dic[url].extend([cor_nam, idz])
 
-        return(url_dic)
+    url_dic_rev = dict(zip([x[2] for x in url_dic.values() if x !=['-']], url_dic.values()))
+    id_list = set(list(url_dic_rev.keys()))
+    id_list = [x for x in id_list if x != '-']
+    return(url_dic, url_dic_rev, id_list)
 
-def search_gene_annot(ins_dic, uidz=False):
-    if uidz == True:
-        uids = ins_dic.values()
-    else:
-        uids = [x[2] for x in ins_dic.values() if x[2] != '-']
-    uids = list(set(uids))
+
+
+def search_gene_annot(uids):
     urlz = []
     uids2 = []
-    ext_dic = dict(zip([x[2] for x in ins_dic.values()], ins_dic.values()))
+    ext_dic={}
 
     for i in uids:
         url=gene_basename_uid+str(i)
         urlz.append(gene_basename_uid+str(i))
-
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
         # Start the load operations and mark each future with its URL
@@ -89,37 +90,32 @@ def search_gene_annot(ins_dic, uidz=False):
             try: ext_dic[uids2].extend([gene_symbols, descriptions, summaries])
             except KeyError: ext_dic[uids2] = [gene_symbols, descriptions, summaries]
 
-
-    return ext_dic
-
-def add_name_pb_url_in_dic(url_dic, uid=False):
-    if
-            for x in url_dic:
-
-
-
+    return(ext_dic)
 
 def ncbi_pubmed_name_comention(genes, coterm):
     coterm = "+".join(coterm.split(" "))
     urlz=[]
-    counts = []
-    pub_ids= []
+    pub_dict={}
     for g in genes:
-        if g == "-"
-        urlz.append(pubmed_basename_name+'('+g+')+AND+('+coterm+')&retmax=10000')
+        url = pubmed_basename_name+'('+g+')+AND+('+coterm+')&retmax=10000000'
+        urlz.append(url)
+        pub_dict[url] = [g]
+    with concurrent.futures.ThreadPoolExecutor(max_workers=20) as executor:
+        # Start the load operations and mark each future with its URL
+        future_to_url = {executor.submit(load_url, url, 60): url for url in urlz}
+        for future in concurrent.futures.as_completed(future_to_url):
+            url = future_to_url[future]
+            data = future.result()
+            fre=re.search('<Count>\d+</Count>', str(data)).group()
+            counts = re.findall("\d+", fre)
+            fre=re.findall('<Id>\d+</Id>', str(data))
+            pub_ids=[', '.join(re.findall("\d+",x)) for x in fre]
+            result = counts + pub_ids
+            pub_dict[url].extend(result)
+    return(pub_dict)
 
-        else:
-            url=pubmed_basename_name+'('+g+')+AND+('+coterm+')&retmax=10000'
-            response=requests.get(url)
-            a=response.content
-            fre=re.search('<Count>\d+</Count>', str(a)).group()
-            counts.append(re.findall("\d+", fre))
-            fre=re.findall('<Id>\d+</Id>', str(a))
-            pub_ids.append([', '.join(re.findall("\d+",x)) for x in fre])
 
-
-    return(counts, pub_ids)
-
+dio = ncbi_pubmed_name_comention(search_names, 'Paracetamol')
 urlz = []
 for g in genes:
     urlz.append(gene_basename_name+'('+g+'%5BGene%20Name%5D)%20AND%20'+organism+"%5BOrganism%5D")
